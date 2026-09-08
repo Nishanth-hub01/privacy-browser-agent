@@ -695,9 +695,9 @@ The system must:
 ## 🚧 Current Development Status
 
 ```text
-[ ] Repository setup
-[ ] Folder structure
-[ ] API contract
+[X] Repository setup
+[X] Folder structure
+[X] API contract
 [ ] Shared TypeScript/Pydantic schemas
 [ ] Browser extension
 [ ] Screenshot capture
