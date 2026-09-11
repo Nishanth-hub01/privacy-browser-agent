@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Privacy Browser Agent</title>
+    <style>
+      :root {
+        --bg: #0f172a;
+        --panel: #111827;
+        --panel-soft: #1f2937;
+        --text: #f8fafc;
+        --muted: #cbd5e1;
+        --accent: #38bdf8;
+        --success: #22c55e;
+        --warning: #fbbf24;
+        --danger: #f87171;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: Arial, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        width: 380px;
+        min-height: 500px;
+        padding: 16px;
+      }
+
+      .title {
+        margin: 0 0 12px;
+        font-size: 20px;
+      }
+
+      .section {
+        background: var(--panel-soft);
+        border-radius: 10px;
+        padding: 12px;
+        margin-bottom: 12px;
+      }
+
+      label {
+        display: block;
+        font-size: 12px;
+        margin-bottom: 8px;
+        color: var(--muted);
+      }
+
+      textarea {
+        width: 100%;
+        min-height: 80px;
+        resize: vertical;
+        border: 1px solid #334155;
+        border-radius: 8px;
+        background: #0b1220;
+        color: var(--text);
+        padding: 10px;
+        font-size: 13px;
+      }
+
+      button {
+        width: 100%;
+        padding: 10px 14px;
+        border: none;
+        border-radius: 8px;
+        background: var(--accent);
+        color: #082f49;
+        font-weight: 700;
+        cursor: pointer;
+      }
+
+      button.secondary {
+        background: #374151;
+        color: var(--text);
+      }
+
+      .status {
+        margin-top: 12px;
+        min-height: 22px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      .status.success {
+        color: var(--success);
+      }
+
+      .status.error {
+        color: var(--danger);
+      }
+
+      .status.warning {
+        color: var(--warning);
+      }
+
+      .meta {
+        font-size: 11px;
+        color: var(--muted);
+        line-height: 1.4;
+      }
+
+      .action-output {
+        margin-top: 10px;
+        padding: 10px;
+        border-radius: 8px;
+        background: #0b1220;
+        border: 1px solid #334155;
+        font-size: 12px;
+        color: var(--muted);
+        white-space: pre-wrap;
+      }
+    </style>
+  </head>
+  <body>
+    <h1 class="title">Browser Agent</h1>
+
+    <div class="section">
+      <label for="instruction">User instruction</label>
+      <textarea id="instruction" placeholder="Example: Find the upload button and click it.">Find the upload button and click it.</textarea>
+    </div>
+
+    <div class="section">
+      <button id="analyze-btn">Analyze page</button>
+      <button id="execute-btn" class="secondary" style="margin-top: 8px;">Run last action</button>
+    </div>
+
+    <div id="status" class="status">Ready.</div>
+    <div id="action-output" class="action-output">No action loaded yet.</div>
+
+    <div class="section meta">
+      This extension captures the active page, sanitizes sensitive content locally, and sends only safe context to the server.
+    </div>
+
+    <script src="popup.js"></script>
+  </body>
+</html>
