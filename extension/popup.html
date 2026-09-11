@@ -80,9 +80,12 @@
 
       .status {
         margin-top: 12px;
-        min-height: 22px;
+        min-height: 24px;
         font-size: 12px;
         color: var(--muted);
+        border-radius: 8px;
+        background: rgba(15, 23, 42, 0.7);
+        padding: 8px 10px;
       }
 
       .status.success {
@@ -103,8 +106,17 @@
         line-height: 1.4;
       }
 
+      .output-label {
+        display: block;
+        margin: 10px 0 8px;
+        font-size: 11px;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+
       .action-output {
-        margin-top: 10px;
+        margin-top: 0;
         padding: 10px;
         border-radius: 8px;
         background: #0b1220;
@@ -112,11 +124,12 @@
         font-size: 12px;
         color: var(--muted);
         white-space: pre-wrap;
+        min-height: 110px;
       }
     </style>
   </head>
   <body>
-    <h1 class="title">Browser Agent</h1>
+    <h1 class="title">Privacy Browser Agent</h1>
 
     <div class="section">
       <label for="instruction">User instruction</label>
@@ -128,8 +141,15 @@
       <button id="execute-btn" class="secondary" style="margin-top: 8px;">Run last action</button>
     </div>
 
-    <div id="status" class="status">Ready.</div>
-    <div id="action-output" class="action-output">No action loaded yet.</div>
+    <div class="section">
+      <label class="output-label">Status</label>
+      <div id="status" class="status">Ready.</div>
+    </div>
+
+    <div class="section">
+      <label class="output-label">Last returned action</label>
+      <div id="action-output" class="action-output">No action loaded yet.</div>
+    </div>
 
     <div class="section meta">
       This extension captures the active page, sanitizes sensitive content locally, and sends only safe context to the server.

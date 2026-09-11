@@ -1,16 +1,93 @@
+function getElementText(element) {
+  const text = element.textContent || '';
+  const ariaLabel = element.getAttribute('aria-label') || '';
+  const placeholder = element.getAttribute('placeholder') || '';
+  const value = element.getAttribute('value') || '';
+  const combined = [text, ariaLabel, placeholder, value].join(' ');
+  return combined.replace(/\s+/g, ' ').trim();
+}
+
+function buildSelector(element) {
+  if (!element || !(element instanceof Element)) return null;
+
+  if (element.id) {
+    return '#' + CSS.escape(element.id);
+  }
+
+  const tagName = element.tagName.toLowerCase();
+  if (element.name) {
+    return `${tagName}[name="${CSS.escape(element.name)}"]`;
+  }
+
+  if (element.classList && element.classList.length) {
+    const className = Array.from(element.classList)
+      .filter(Boolean)
+      .slice(0, 3)
+      .map((classItem) => `.${CSS.escape(classItem)}`)
+      .join('');
+
+    if (className) {
+      return `${tagName}${className}`;
+    }
+  }
+
+  return tagName;
+}
+
+function isVisible(element) {
+  if (!element || !(element instanceof Element)) return false;
+
+  const style = window.getComputedStyle(element);
+  if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') {
+    return false;
+  }
+
+  const rect = element.getBoundingClientRect();
+  return rect.width > 0 && rect.height > 0;
+}
+
 function collectVisualElements() {
-  const candidates = Array.from(document.querySelectorAll('button, a, input, textarea, select, [role="button"], [role="link"], [onclick]'));
+  const selector = [
+    'button',
+    'a',
+    'input:not([type="hidden"])',
+    'textarea',
+    'select',
+    '[role="button"]',
+    '[role="link"]',
+    'summary',
+    '[onclick]'
+  ].join(', ');
 
-  return candidates.slice(0, 25).map((element) => {
-    const label = (element.textContent || element.getAttribute('aria-label') || element.getAttribute('placeholder') || element.getAttribute('value') || '').trim();
+  const candidates = Array.from(document.querySelectorAll(selector));
 
-    return {
-      type: element.tagName.toLowerCase(),
-      label: label || undefined,
-      id: element.id || undefined,
-      selector: element.id ? '#' + CSS.escape(element.id) : undefined
-    };
-  });
+  return candidates
+    .filter((element) => isVisible(element))
+    .slice(0, 25)
+    .map((element) => {
+      const label = getElementText(element);
+      const rect = element.getBoundingClientRect();
+
+      return {
+        type: element.tagName.toLowerCase(),
+        label: label || undefined,
+        id: element.id || undefined,
+        selector: buildSelector(element) || undefined,
+        x: Math.round(rect.left),
+        y: Math.round(rect.top),
+        width: Math.max(0, Math.round(rect.width)),
+        height: Math.max(0, Math.round(rect.height))
+      };
+    });
+}
+
+function collectPageSnapshot() {
+  return {
+    url: location.href,
+    title: document.title || '',
+    dom: document.documentElement.outerHTML,
+    visualElements: collectVisualElements()
+  };
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -20,12 +97,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.type === 'collect-page') {
-    const payload = {
-      url: location.href,
-      dom: document.documentElement.outerHTML,
-      visualElements: collectVisualElements()
-    };
-    sendResponse(payload);
+    const payload = collectPageSnapshot();
+    sendResponse({ ok: true, ...payload });
     return true;
   }
 

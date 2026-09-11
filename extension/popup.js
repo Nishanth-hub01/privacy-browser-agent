@@ -203,31 +203,76 @@ async function executeAction(action) {
 }
 
 function validateAction(action) {
-  if (!action || typeof action !== 'object') return null;
+  if (!action || typeof action !== 'object' || Array.isArray(action)) {
+    return null;
+  }
 
   const supported = ['click', 'scroll', 'type', 'navigate'];
-  if (!supported.includes(action.type)) return null;
+  const type = typeof action.type === 'string' ? action.type.trim().toLowerCase() : '';
+  if (!supported.includes(type)) {
+    return null;
+  }
 
-  if (action.type === 'click' || action.type === 'type') {
-    const target = action.target || {};
-    if (!target || (!target.id && !target.selector && (target.x === undefined || target.y === undefined))) {
+  const target = action.target && typeof action.target === 'object' && !Array.isArray(action.target)
+    ? action.target
+    : null;
+
+  if (!target) {
+    return null;
+  }
+
+  if (type === 'click') {
+    const hasId = typeof target.id === 'string' && target.id.trim().length > 0;
+    const hasSelector = typeof target.selector === 'string' && target.selector.trim().length > 0;
+    const hasCoords = Number.isFinite(Number(target.x)) && Number.isFinite(Number(target.y));
+    if (!hasId && !hasSelector && !hasCoords) {
       return null;
     }
   }
 
-  if (action.type === 'scroll') {
-    const target = action.target || {};
-    if (!target || !['up', 'down'].includes(target.direction) || !Number.isFinite(Number(target.amount))) {
+  if (type === 'scroll') {
+    const direction = typeof target.direction === 'string' ? target.direction.trim().toLowerCase() : '';
+    const amount = Number(target.amount);
+    if (!['up', 'down'].includes(direction) || !Number.isFinite(amount) || amount <= 0) {
       return null;
     }
   }
 
-  if (action.type === 'navigate') {
-    const target = action.target || {};
-    if (!target || typeof target.url !== 'string' || !target.url.trim()) return null;
+  if (type === 'type') {
+    const hasId = typeof target.id === 'string' && target.id.trim().length > 0;
+    const hasSelector = typeof target.selector === 'string' && target.selector.trim().length > 0;
+    const hasCoords = Number.isFinite(Number(target.x)) && Number.isFinite(Number(target.y));
+    if (!hasId && !hasSelector && !hasCoords) {
+      return null;
+    }
+    if (typeof action.text !== 'string' || action.text.trim().length === 0) {
+      return null;
+    }
   }
 
-  return action;
+  if (type === 'navigate') {
+    const url = typeof target.url === 'string' ? target.url.trim() : '';
+    if (!url) {
+      return null;
+    }
+
+    try {
+      const parsed = new URL(url);
+      if (!['http:', 'https:'].includes(parsed.protocol)) {
+        return null;
+      }
+    } catch (error) {
+      return null;
+    }
+  }
+
+  return {
+    type,
+    target,
+    ...(type === 'type' ? { text: action.text } : {}),
+    ...(type === 'scroll' ? { target: { direction: target.direction, amount: Number(target.amount) } } : {}),
+    ...(type === 'navigate' ? { target: { url: target.url.trim() } } : {})
+  };
 }
 
 elements.analyzeBtn.addEventListener('click', async () => {
