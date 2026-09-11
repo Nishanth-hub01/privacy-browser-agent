@@ -1,13 +1,12 @@
 {
   "manifest_version": 3,
-  "name": "Privacy-Preserving Vision Browser Agent",
+  "name": "On-device Visual Browser Agent",
   "version": "1.0.0",
-  "description": "Captures page context, sanitizes it locally, and sends only safe data to the server.",
+  "description": "On-device browser analysis and safe action execution for the privacy-preserving visual browser agent.",
   "permissions": [
     "activeTab",
     "scripting",
-    "storage",
-    "tabs"
+    "storage"
   ],
   "host_permissions": [
     "<all_urls>"
@@ -16,7 +15,7 @@
     "service_worker": "src/background.js"
   },
   "action": {
-    "default_title": "Privacy Browser Agent",
+    "default_title": "On-device Visual Browser Agent",
     "default_popup": "popup.html"
   },
   "content_scripts": [
