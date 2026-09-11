@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>On-device Browser Agent</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <main class="panel">
+      <header class="header">
+        <p class="eyebrow">Browser workspace</p>
+        <h1>On-device Browser Agent</h1>
+        <p class="subtitle">Inspect the active page locally.</p>
+      </header>
+
+      <section class="section" aria-labelledby="instruction-heading">
+        <div class="section-heading">
+          <h2 id="instruction-heading">Instruction</h2>
+          <span class="optional">Optional</span>
+        </div>
+        <label class="sr-only" for="instruction">Tell the agent what to do</label>
+        <textarea
+          id="instruction"
+          name="instruction"
+          rows="4"
+          placeholder="Tell the agent what to do..."
+        ></textarea>
+      </section>
+
+      <section class="section actions" aria-labelledby="actions-heading">
+        <h2 id="actions-heading">Page tools</h2>
+        <button id="analyze-button" class="button button-primary" type="button">
+          Analyze Page
+        </button>
+        <button id="screenshot-button" class="button button-secondary" type="button">
+          Capture Screenshot
+        </button>
+        <button id="run-button" class="button button-secondary" type="button" disabled>
+          Run Agent
+        </button>
+      </section>
+
+      <section class="status-section" aria-labelledby="status-heading">
+        <div class="section-heading">
+          <h2 id="status-heading">Status</h2>
+          <span id="status-indicator" class="status-indicator" aria-hidden="true"></span>
+        </div>
+        <p id="status" class="status" role="status" aria-live="polite">Ready</p>
+      </section>
+    </main>
+
+    <script src="popup.js"></script>
+  </body>
+</html>
