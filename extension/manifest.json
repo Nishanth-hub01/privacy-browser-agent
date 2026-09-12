@@ -12,11 +12,11 @@
     "<all_urls>"
   ],
   "background": {
-    "service_worker": "src/background.js"
+    "service_worker": "service-worker.js"
   },
   "action": {
     "default_title": "On-device Visual Browser Agent",
-    "default_popup": "popup.html"
+    "default_popup": "popup/popup.html"
   },
   "content_scripts": [
     {
@@ -24,7 +24,8 @@
         "<all_urls>"
       ],
       "js": [
-        "src/content.js"
+        "utils/dom-analyzer.js",
+        "content/content-script.js"
       ],
       "run_at": "document_idle",
       "all_frames": false

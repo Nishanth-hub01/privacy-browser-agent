@@ -1,4 +1,8 @@
 (() => {
+  const MESSAGE_TYPES = Object.freeze({
+    ANALYZE_PAGE: 'ANALYZE_PAGE',
+    GET_PAGE_CONTEXT: 'GET_PAGE_CONTEXT'
+  });
   const MAX_TEXT_LENGTH = 160;
   const MAX_ELEMENTS = 100;
   const MAX_VISIBLE_TEXT_ITEMS = 100;
@@ -106,6 +110,10 @@
   }
 
   function analyzeDom() {
+    if (window.domAnalyzer && typeof window.domAnalyzer.analyze === 'function') {
+      return window.domAnalyzer.analyze();
+    }
+
     if (!document.body) {
       return { elements: [], visibleText: [] };
     }
@@ -122,7 +130,7 @@
   }
 
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    if (!message || (message.type !== 'analyze-dom' && message.type !== 'collect-page')) {
+    if (!message || !Object.values(MESSAGE_TYPES).includes(message.type)) {
       return false;
     }
 

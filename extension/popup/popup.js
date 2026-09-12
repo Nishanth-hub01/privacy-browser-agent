@@ -10,6 +10,12 @@ const elements = {
 let latestAnalysis = null;
 let latestScreenshot = null;
 
+const MESSAGE_TYPES = Object.freeze({
+  ANALYZE_PAGE: 'ANALYZE_PAGE',
+  CAPTURE_SCREENSHOT: 'CAPTURE_SCREENSHOT',
+  GET_PAGE_CONTEXT: 'GET_PAGE_CONTEXT'
+});
+
 function setStatus(message, state = 'default') {
   elements.status.textContent = message;
   elements.status.className = 'status';
@@ -28,12 +34,17 @@ function setProcessing(processing) {
   document.body.setAttribute('aria-busy', String(processing));
 }
 
-async function getActiveTab() {
-  const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (!activeTab || typeof activeTab.id !== 'number') {
-    throw new Error('No active browser tab is available.');
+async function requestServiceWorker(type) {
+  if (!Object.values(MESSAGE_TYPES).includes(type)) {
+    throw new Error('Invalid browser request.');
   }
-  return activeTab;
+
+  const response = await chrome.runtime.sendMessage({ type });
+  if (!response || response.ok === false) {
+    throw new Error(response?.error?.message || response?.error || 'The browser request failed.');
+  }
+
+  return response;
 }
 
 async function analyzePage() {
@@ -41,14 +52,7 @@ async function analyzePage() {
   setStatus('Analyzing page...');
 
   try {
-    const activeTab = await getActiveTab();
-    const response = await chrome.tabs.sendMessage(activeTab.id, {
-      type: 'collect-page'
-    });
-
-    if (!response || response.ok === false) {
-      throw new Error(response?.error || response?.reason || 'The page could not be analyzed.');
-    }
+    const response = await requestServiceWorker(MESSAGE_TYPES.ANALYZE_PAGE);
 
     latestAnalysis = response.data || response;
     const elementsFound = latestAnalysis?.elements?.length ?? latestAnalysis?.visualElements?.length;
@@ -67,10 +71,8 @@ async function captureScreenshot() {
   setStatus('Capturing visible tab...');
 
   try {
-    const activeTab = await getActiveTab();
-    latestScreenshot = await chrome.tabs.captureVisibleTab(activeTab.windowId, {
-      format: 'png'
-    });
+    const response = await requestServiceWorker(MESSAGE_TYPES.CAPTURE_SCREENSHOT);
+    latestScreenshot = response.screenshot;
 
     if (typeof latestScreenshot !== 'string' || latestScreenshot.length === 0) {
       throw new Error('The browser returned an empty screenshot.');
