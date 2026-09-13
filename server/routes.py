@@ -45,6 +45,7 @@ try:
         is_low_confidence,
     )
     from server.privacy_interface import INTEGRATION_STATUS
+    from agent.provider import ProviderRateLimitError
 except ModuleNotFoundError:
     from schemas import (
         AnalyzeRequest,
@@ -62,6 +63,7 @@ except ModuleNotFoundError:
         is_low_confidence,
     )
     from privacy_interface import INTEGRATION_STATUS
+    from agent.provider import ProviderRateLimitError
 
 try:
     from agent import BrowserAgent, AgentContext
@@ -143,14 +145,16 @@ async def privacy_status():
     }
 
 
-def _error(request_id: str, code: ErrorCode, message: str, http_status: int) -> JSONResponse:
+def _error(request_id: str, code: ErrorCode, message: str, http_status: int, headers: dict | None = None) -> JSONResponse:
     """Build a contract-compliant JSON error response.
 
     Centralises error construction so all error paths have identical structure.
     """
     logger.warning("[%s] %s: %s", request_id, code.value, message)
+    response_headers = headers or {}
     return JSONResponse(
         status_code=http_status,
+        headers=response_headers,
         content=ErrorResponse(
             request_id=request_id,
             status="error",
@@ -225,6 +229,18 @@ async def analyze_webpage(request: AnalyzeRequest):
     # ── Step 5: Agent planning ───────────────────────────────────────────────
     try:
         plan_result = await agent.act(context)
+    except ProviderRateLimitError as rate_err:
+        retry_after = rate_err.retry_after
+        if retry_after is not None:
+            retry_after = max(0, int(retry_after))
+        headers = {"Retry-After": str(retry_after)} if retry_after is not None else {}
+        logger.warning("[%s] Provider rate limit exceeded: %s", rid, rate_err)
+        return _error(
+            rid, ErrorCode.MODEL_ERROR,
+            f"Model rate limit exceeded: {rate_err}",
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            headers=headers,
+        )
     except (UnsupportedActionError, InvalidActionTargetError) as act_err:
         logger.warning("[%s] Action validation failed: %s", rid, act_err)
         return _error(

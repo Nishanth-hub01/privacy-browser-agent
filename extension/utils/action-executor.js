@@ -57,6 +57,34 @@
     return type === 'password' || SENSITIVE_NAME_PATTERN.test(metadata);
   }
 
+  function applyHighlight(element, label = 'result') {
+    if (!(element instanceof Element)) return;
+
+    element.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+
+    let overlay = element.__agentHighlightOverlay;
+    if (!overlay) {
+      overlay = document.createElement('div');
+      overlay.style.position = 'absolute';
+      overlay.style.zIndex = '2147483647';
+      overlay.style.pointerEvents = 'none';
+      overlay.style.border = '3px solid rgba(52, 211, 153, 0.95)';
+      overlay.style.boxShadow = '0 0 0 9999px rgba(16, 24, 40, 0.18)';
+      overlay.style.borderRadius = '8px';
+      overlay.style.background = 'rgba(52, 211, 153, 0.08)';
+      element.__agentHighlightOverlay = overlay;
+      document.body.appendChild(overlay);
+    }
+
+    const rect = element.getBoundingClientRect();
+    overlay.style.left = `${window.scrollX + rect.left - 4}px`;
+    overlay.style.top = `${window.scrollY + rect.top - 4}px`;
+    overlay.style.width = `${rect.width + 8}px`;
+    overlay.style.height = `${rect.height + 8}px`;
+    overlay.title = `Result highlight: ${label}`;
+    overlay.setAttribute('data-agent-highlight', label);
+  }
+
   function validateAction(input) {
     if (!input || typeof input !== 'object' || Array.isArray(input)) {
       return { error: resultError(null, null, 'INVALID_ACTION', 'Action must be an object.') };
@@ -125,12 +153,18 @@
 
     if (action === 'click') {
       element.click();
+      if (input.highlight === true || input.result === true || input.target?.highlight === true || input.target?.result === true) {
+        applyHighlight(element, input.label || 'result');
+      }
     } else if (action === 'type') {
       if (!('value' in element)) return resultError(action, target, 'INVALID_TARGET', 'Target is not a text control.');
       element.focus();
       element.value = input.text;
       element.dispatchEvent(new Event('input', { bubbles: true }));
       element.dispatchEvent(new Event('change', { bubbles: true }));
+      if (input.highlight === true || input.result === true || input.target?.highlight === true || input.target?.result === true) {
+        applyHighlight(element, input.label || 'typed result');
+      }
     } else if (action === 'select') {
       if (element.tagName.toLowerCase() !== 'select') return resultError(action, target, 'INVALID_TARGET', 'Target is not a select element.');
       if (!Array.from(element.options).some((option) => option.value === input.value)) {
@@ -139,6 +173,9 @@
       element.value = input.value;
       element.dispatchEvent(new Event('input', { bubbles: true }));
       element.dispatchEvent(new Event('change', { bubbles: true }));
+      if (input.highlight === true || input.result === true || input.target?.highlight === true || input.target?.result === true) {
+        applyHighlight(element, input.label || 'selected result');
+      }
     }
 
     return { success: true, action, target };

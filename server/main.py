@@ -7,6 +7,17 @@ Exposes 'app' for uvicorn:
 import sys
 from pathlib import Path
 
+# Load .env file (GEMINI_API_KEY, LLM_PROVIDER, GEMINI_MODEL, etc.) before anything else
+try:
+    from dotenv import load_dotenv
+    _env_path = Path(__file__).resolve().parent.parent / ".env"
+    # The repo .env is the explicit project configuration; it should override stale
+    # shell variables so a user-configured Gemini provider is not silently replaced by
+    # an old Ollama environment value.
+    load_dotenv(dotenv_path=_env_path, override=True)
+except ImportError:
+    pass  # python-dotenv not installed; rely on shell environment
+
 # Ensure both server/ and workspace root are in sys.path
 SERVER_DIR = Path(__file__).resolve().parent
 ROOT_DIR = SERVER_DIR.parent

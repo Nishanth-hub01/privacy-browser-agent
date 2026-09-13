@@ -1,6 +1,6 @@
 (() => {
   const DEFAULT_BACKEND_URL = 'http://localhost:8000';
-  const REQUEST_TIMEOUT_MS = 10000;
+  const REQUEST_TIMEOUT_MS = Number(globalThis.browserAgentConfig?.backendTimeoutMs || 120000);
   const REDACTED = '[REDACTED]';
   let configuredBackendUrl = '';
 

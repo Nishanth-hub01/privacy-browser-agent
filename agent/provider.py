@@ -5,6 +5,7 @@ Uses environment configuration for API keys, model parameters, and base URLs.
 Never hardcodes secrets.
 """
 import logging
+import re
 from abc import ABC, abstractmethod
 from typing import Any, Callable, Dict, List, Optional, Union
 from agent.config import AgentConfig
@@ -12,9 +13,65 @@ from agent.config import AgentConfig
 logger = logging.getLogger("agent.provider")
 
 
+def _extract_retry_after(exc: Exception) -> Optional[int]:
+    """Extract a Retry-After value from common provider exception shapes."""
+    headers = None
+
+    if hasattr(exc, "headers") and exc.headers:
+        headers = exc.headers
+    elif hasattr(exc, "response") and getattr(exc.response, "headers", None):
+        headers = exc.response.headers
+
+    if headers is not None:
+        for key in ("retry-after", "Retry-After"):
+            value = headers.get(key)
+            if value is not None:
+                try:
+                    return int(float(str(value).strip()))
+                except (TypeError, ValueError):
+                    return None
+
+    if hasattr(exc, "status_code") and exc.status_code == 429:
+        return 30
+
+    raw = str(exc).lower()
+    if "retry-after" in raw:
+        match = re.search(r"retry-after[:\s]+(\d+)", raw)
+        if match:
+            return int(match.group(1))
+
+    return None
+
+
+def _looks_like_rate_limit(exc: Exception, raw_message: str) -> bool:
+    """Check whether the exception represents a quota or rate-limit failure."""
+    text = raw_message.lower()
+    status_code = getattr(exc, "status_code", None)
+    if status_code == 429:
+        return True
+    if any(token in text for token in ("resource_exhausted", "rate limit", "rate-limit", "quota exceeded", "quota exhausted", "429")):
+        return True
+    if hasattr(exc, "body"):
+        try:
+            body = str(exc.body).lower()
+            if any(token in body for token in ("resource_exhausted", "rate limit", "quota exceeded", "quota exhausted", "429")):
+                return True
+        except Exception:
+            pass
+    return False
+
+
 class ProviderError(Exception):
     """Raised when an LLM/VLM provider fails or returns an error."""
     pass
+
+
+class ProviderRateLimitError(ProviderError):
+    """Raised for provider quota/rate-limit failures that should return 429 responses."""
+
+    def __init__(self, message: str, retry_after: Optional[int] = None):
+        super().__init__(message)
+        self.retry_after = retry_after
 
 
 class BaseLLMProvider(ABC):
@@ -52,7 +109,7 @@ class OpenAIProvider(BaseLLMProvider):
         if self._client is None:
             if not self.config.has_api_key and not self.config.is_ollama:
                 raise ProviderError(
-                    "OPENAI_API_KEY is not configured. Set the OPENAI_API_KEY environment variable, or configure Ollama via LLM_PROVIDER=ollama."
+                    "API key is not configured. Set GEMINI_API_KEY (for Google Gemini), OPENAI_API_KEY (for OpenAI), or set LLM_PROVIDER=ollama."
                 )
             try:
                 from openai import AsyncOpenAI
@@ -115,6 +172,12 @@ class OpenAIProvider(BaseLLMProvider):
             err_msg = str(exc)
             if self.config.api_key and self.config.api_key in err_msg:
                 err_msg = err_msg.replace(self.config.api_key, self.config.masked_api_key())
+
+            if _looks_like_rate_limit(exc, err_msg):
+                retry_after = _extract_retry_after(exc)
+                logger.warning("VLM/LLM provider rate limit reached: %s (retry_after=%s)", err_msg, retry_after)
+                raise ProviderRateLimitError(f"Model provider rate limit exceeded: {err_msg}", retry_after=retry_after) from exc
+
             logger.error("VLM/LLM provider call failed: %s", err_msg)
             raise ProviderError(f"Model provider request failed: {err_msg}") from exc
 

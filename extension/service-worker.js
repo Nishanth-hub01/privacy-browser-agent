@@ -140,9 +140,16 @@ async function handleRequest(message) {
 
   if (message.type === MESSAGE_TYPES.EXECUTE_ACTION) {
     emitStatus('Executing validated action...');
+    const action = {
+      ...(message.action || {}),
+      ...(message.action?.result ? { highlight: true, label: 'result' } : {}),
+      ...(message.action?.target && typeof message.action.target === 'object'
+        ? { target: { ...message.action.target, ...(message.action.result ? { highlight: true, result: true } : {}) } }
+        : {})
+    };
     const response = await sendToContentScript(tab.id, {
       type: MESSAGE_TYPES.EXECUTE_ACTION,
-      action: message.action
+      action
     });
     return { ok: true, type: message.type, ...response };
   }
