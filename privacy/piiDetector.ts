@@ -31,7 +31,7 @@ export function detectPII(text: string): PIIMatch[] {
     },
     {
       type: "PASSWORD",
-      regex: /(?:^|[\s:])(?:password|passwd|pwd)[\s:=]+([A-Za-z0-9!@#$%^&*()_+\-=\[\]{};':"\\|,.<>/?`~]{6,})/gi,
+      regex: /(?:^|[\s:])(?:password|passwd|pwd)[\s:=]+(?!\[(?:REDACTED|EMAIL|PHONE|ADDRESS|PERSON|GOVERNMENT_ID|CREDIT_CARD)\])([A-Za-z0-9!@#$%^&*()_+\-=\[\]{};':"\\|,.<>/?`~]{6,})/gi,
       replacement: "[REDACTED]",
     },
     {
