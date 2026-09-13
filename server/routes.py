@@ -108,10 +108,26 @@ async def privacy_status():
     connected to the server. When privacy_module_available is False, the Extension
     must manually provide already-sanitized fields in its POST /api/v1/analyze body.
     """
+    planner_name = "unknown"
+    provider_name = "unknown"
+    model_name = "unknown"
+    is_local_vlm = False
+    if agent and hasattr(agent, "planner"):
+        planner = agent.planner
+        planner_name = type(planner).__name__
+        if hasattr(planner, "config"):
+            provider_name = getattr(planner.config, "provider", "unknown")
+            model_name = getattr(planner.config, "model", "unknown")
+            is_local_vlm = getattr(planner.config, "is_ollama", False)
+
     return {
         "privacy_module_available": INTEGRATION_STATUS["privacy_module_available"],
         "server_pii_guard_active": INTEGRATION_STATUS["server_pii_guard_active"],
         "sanitized_field_enforcement": INTEGRATION_STATUS["sanitized_field_enforcement"],
+        "agent_planner": planner_name,
+        "llm_provider": provider_name,
+        "vlm_model": model_name,
+        "is_local_vlm": is_local_vlm,
         "accepted_fields": [
             "sanitized_screenshot",
             "sanitized_dom",

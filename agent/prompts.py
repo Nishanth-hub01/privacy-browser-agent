@@ -100,14 +100,18 @@ def build_multimodal_messages(context: AgentContext, dom_char_limit: int = 25000
 
     # 4. Attach sanitized screenshot if available
     if context.sanitized_screenshot and len(context.sanitized_screenshot.strip()) > 10:
-        data_uri = format_screenshot_data_uri(context.sanitized_screenshot)
-        content_parts.append({
-            "type": "image_url",
-            "image_url": {
-                "url": data_uri,
-                "detail": "auto",
-            },
-        })
+        clean_screenshot = context.sanitized_screenshot.strip()
+        # Only attach as vision image_url if it is real image data (base64 or data URI),
+        # not a redaction placeholder token like '[REDACTED_SCREENSHOT]'
+        if not (clean_screenshot.startswith("[") and clean_screenshot.endswith("]")):
+            data_uri = format_screenshot_data_uri(clean_screenshot)
+            content_parts.append({
+                "type": "image_url",
+                "image_url": {
+                    "url": data_uri,
+                    "detail": "auto",
+                },
+            })
 
     return [
         {"role": "system", "content": SYSTEM_PROMPT},

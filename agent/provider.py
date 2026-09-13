@@ -50,17 +50,18 @@ class OpenAIProvider(BaseLLMProvider):
     def _get_client(self):
         """Lazy-initializes the AsyncOpenAI client."""
         if self._client is None:
-            if not self.config.has_api_key:
+            if not self.config.has_api_key and not self.config.is_ollama:
                 raise ProviderError(
-                    "OPENAI_API_KEY is not configured. Set the OPENAI_API_KEY environment variable."
+                    "OPENAI_API_KEY is not configured. Set the OPENAI_API_KEY environment variable, or configure Ollama via LLM_PROVIDER=ollama."
                 )
             try:
                 from openai import AsyncOpenAI
             except ImportError as exc:
                 raise ProviderError(f"Failed to import openai package: {exc}") from exc
 
+            api_key = self.config.api_key or ("ollama" if self.config.is_ollama else "none")
             kwargs: Dict[str, Any] = {
-                "api_key": self.config.api_key,
+                "api_key": api_key,
                 "timeout": self.config.timeout,
             }
             if self.config.base_url:
@@ -74,9 +75,10 @@ class OpenAIProvider(BaseLLMProvider):
         client = self._get_client()
 
         logger.info(
-            "Calling VLM/LLM provider=%s model=%s (api_key=%s)",
+            "Calling VLM/LLM provider=%s model=%s base_url=%s (api_key=%s)",
             self.config.provider,
             self.config.model,
+            self.config.base_url or "default",
             self.config.masked_api_key(),
         )
 
@@ -91,8 +93,9 @@ class OpenAIProvider(BaseLLMProvider):
                 )
             except Exception as initial_err:
                 err_str = str(initial_err).lower()
-                if "response_format" in err_str or "json_object" in err_str:
-                    logger.warning("Model endpoint rejected json_object response_format; retrying without it.")
+                # If local model/endpoint rejects response_format, retry without it
+                if any(kw in err_str for kw in ("response_format", "json_object", "format", "400", "422", "unsupported")):
+                    logger.warning("Model endpoint rejected json_object response_format (%s); retrying without it.", initial_err)
                     completion = await client.chat.completions.create(
                         model=self.config.model,
                         messages=messages,

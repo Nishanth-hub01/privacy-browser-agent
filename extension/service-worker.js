@@ -31,7 +31,10 @@ function emitStatus(message) {
 
 function isRestrictedPage(url) {
   try {
-    return RESTRICTED_PAGE_PROTOCOLS.has(new URL(url || '').protocol);
+    const parsed = new URL(url || '');
+    if (RESTRICTED_PAGE_PROTOCOLS.has(parsed.protocol)) return true;
+    if (parsed.hostname === 'chromewebstore.google.com' || parsed.hostname === 'chrome.google.com') return true;
+    return false;
   } catch (error) {
     return true;
   }
@@ -46,13 +49,13 @@ async function getActiveTab() {
   }
 
   if (isRestrictedPage(tab.url)) {
-    throw Object.assign(new Error('This page does not allow extension analysis.'), { code: 'RESTRICTED_PAGE' });
+    throw Object.assign(new Error('This page does not allow extension analysis (internal browser page or Chrome Web Store). Please switch to a standard webpage.'), { code: 'RESTRICTED_PAGE' });
   }
 
   return tab;
 }
 
-function sendToContentScript(tabId, message) {
+function rawSendMessage(tabId, message) {
   return new Promise((resolve, reject) => {
     let settled = false;
     const timeoutId = setTimeout(() => {
@@ -80,6 +83,39 @@ function sendToContentScript(tabId, message) {
       resolve(response);
     });
   });
+}
+
+async function sendToContentScript(tabId, message) {
+  try {
+    return await rawSendMessage(tabId, message);
+  } catch (error) {
+    const msg = String(error?.message || '');
+    if (msg.includes('Could not establish connection') || msg.includes('Receiving end does not exist')) {
+      // Content script was not yet injected (e.g., page was loaded before the extension was loaded/reloaded)
+      if (chrome.scripting && typeof chrome.scripting.executeScript === 'function') {
+        try {
+          await chrome.scripting.executeScript({
+            target: { tabId },
+            files: [
+              'utils/dom-analyzer.js',
+              'utils/action-executor.js',
+              'content/content-script.js'
+            ]
+          });
+          // Allow script initialization
+          await new Promise((resolve) => setTimeout(resolve, 150));
+          return await rawSendMessage(tabId, message);
+        } catch (injectError) {
+          // Injection failed (e.g. restricted or special page)
+        }
+      }
+      throw Object.assign(
+        new Error('Could not connect to page scripts. Please refresh this webpage tab (F5 or Ctrl+R) and try again.'),
+        { code: 'CONTENT_UNAVAILABLE' }
+      );
+    }
+    throw error;
+  }
 }
 
 async function handleRequest(message) {
