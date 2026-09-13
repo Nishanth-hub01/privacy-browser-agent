@@ -1,7 +1,8 @@
 (() => {
   const MESSAGE_TYPES = Object.freeze({
     ANALYZE_PAGE: 'ANALYZE_PAGE',
-    GET_PAGE_CONTEXT: 'GET_PAGE_CONTEXT'
+    GET_PAGE_CONTEXT: 'GET_PAGE_CONTEXT',
+    EXECUTE_ACTION: 'EXECUTE_ACTION'
   });
   const MAX_TEXT_LENGTH = 160;
   const MAX_ELEMENTS = 100;
@@ -135,6 +136,16 @@
     }
 
     try {
+      if (message.type === MESSAGE_TYPES.EXECUTE_ACTION) {
+        if (!window.actionExecutor || typeof window.actionExecutor.execute !== 'function') {
+          sendResponse({ ok: false, error: 'Action executor is unavailable.' });
+          return true;
+        }
+
+        sendResponse({ ok: true, data: window.actionExecutor.execute(message.action) });
+        return true;
+      }
+
       sendResponse({ ok: true, data: analyzeDom() });
     } catch (error) {
       sendError(sendResponse, error);

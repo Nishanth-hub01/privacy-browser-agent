@@ -34,12 +34,12 @@ function setProcessing(processing) {
   document.body.setAttribute('aria-busy', String(processing));
 }
 
-async function requestServiceWorker(type) {
+async function requestServiceWorker(type, payload = {}) {
   if (!Object.values(MESSAGE_TYPES).includes(type)) {
     throw new Error('Invalid browser request.');
   }
 
-  const response = await chrome.runtime.sendMessage({ type });
+  const response = await chrome.runtime.sendMessage({ type, ...payload });
   if (!response || response.ok === false) {
     throw new Error(response?.error?.message || response?.error || 'The browser request failed.');
   }
@@ -52,12 +52,14 @@ async function analyzePage() {
   setStatus('Analyzing page...');
 
   try {
-    const response = await requestServiceWorker(MESSAGE_TYPES.ANALYZE_PAGE);
+    const response = await requestServiceWorker(MESSAGE_TYPES.ANALYZE_PAGE, {
+      instruction: elements.instruction.value.trim()
+    });
 
     latestAnalysis = response.data || response;
     const elementsFound = latestAnalysis?.elements?.length ?? latestAnalysis?.visualElements?.length;
     const detail = Number.isFinite(elementsFound) ? ` ${elementsFound} elements found.` : '';
-    setStatus(`Page analyzed.${detail}`, 'success');
+    setStatus(`Workflow complete.${detail}`, 'success');
   } catch (error) {
     latestAnalysis = null;
     setStatus(error.message || 'Page analysis failed.', 'error');
@@ -89,3 +91,9 @@ async function captureScreenshot() {
 
 elements.analyzeButton.addEventListener('click', analyzePage);
 elements.screenshotButton.addEventListener('click', captureScreenshot);
+
+chrome.runtime.onMessage.addListener((message) => {
+  if (message && message.type === 'WORKFLOW_STATUS' && typeof message.message === 'string') {
+    setStatus(message.message);
+  }
+});

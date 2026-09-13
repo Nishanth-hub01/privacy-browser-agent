@@ -56,19 +56,36 @@
       throw new Error('Context must be a JSON object.');
     }
 
+    const sanitizedDom = context.dom && typeof context.dom === 'object' && !Array.isArray(context.dom)
+      ? globalThis.privacySanitizer && typeof globalThis.privacySanitizer.sanitize === 'function'
+        ? globalThis.privacySanitizer.sanitize(context.dom)
+        : sanitizeValue(context.dom, 'dom')
+      : null;
+
+    const elements = Array.isArray(sanitizedDom?.elements) ? sanitizedDom.elements : [];
+    const visualElements = elements.map((element) => ({
+      type: element.type,
+      label: element.text || element.ariaLabel || element.placeholder,
+      id: element.id,
+      x: element.rect?.x ?? element.position?.x,
+      y: element.rect?.y ?? element.position?.y,
+      width: element.rect?.width ?? element.position?.width,
+      height: element.rect?.height ?? element.position?.height
+    }));
+
     const sanitized = {
-      screenshot: typeof context.screenshot === 'string' ? context.screenshot : null,
-      dom: null,
+      request_id: sanitizeString(context.request_id || `req-${Date.now()}`),
       user_instruction: typeof context.user_instruction === 'string'
         ? sanitizeString(context.user_instruction)
-        : undefined
+        : 'Inspect the page and identify the safest next action.',
+        sanitized_screenshot: typeof context.sanitized_screenshot === 'string'
+          ? sanitizeString(context.sanitized_screenshot)
+          : REDACTED,
+      sanitized_dom: sanitizedDom ? JSON.stringify(sanitizedDom) : '{}',
+      visual_elements: visualElements
     };
 
-    if (context.dom && typeof context.dom === 'object' && !Array.isArray(context.dom)) {
-      sanitized.dom = globalThis.privacySanitizer && typeof globalThis.privacySanitizer.sanitize === 'function'
-        ? globalThis.privacySanitizer.sanitize(context.dom)
-        : sanitizeValue(context.dom, 'dom');
-    } else if (context.dom !== undefined && context.dom !== null) {
+    if (context.dom !== undefined && context.dom !== null && !sanitizedDom) {
       throw new Error('DOM context must be structured sanitized metadata, not raw HTML.');
     }
 
