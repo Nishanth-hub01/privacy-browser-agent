@@ -1,323 +1,194 @@
-# Privacy-Preserving Vision Browser Agent
-## API Contract
+# Browser Agent API Contract
 
-**Version:** 1.0.0
+Version: 1.0.0
 
-This file defines how our 3 project modules communicate.
+This document defines the client/server contract only. It does not implement the backend.
 
----
-
-## 1. System Flow
+## Endpoint
 
 ```text
-Browser Extension
-       |
-       | Screenshot + DOM
-       v
-Local Privacy + Vision AI
-       |
-       | Sanitized Data ONLY
-       v
-FastAPI Server
-       |
-       v
-VLM / LLM
-       |
-       | Action JSON
-       v
-Browser Extension
-       |
-       v
-Browser Action
+POST /analyze
+Content-Type: application/json
 ```
 
----
+The client sends only locally sanitized context. Raw passwords, cookies, storage data,
+authentication tokens, and unsanitized DOM must never be included.
 
-## 2. Team Responsibilities
+## Request
 
-### Member 1 - Browser Extension
+Required fields:
 
-Folder:
-```text
-extension/
-```
-
-Responsible for:
-- Browser extension
-- Screenshot capture
-- DOM extraction
-- User instruction
-- Sending data to Privacy module
-- Sending sanitized data to Server
-- Receiving actions
-- Executing browser actions
-
-### Member 2 - Local Privacy + Vision AI
-
-Folder:
-```text
-privacy/
-```
-
-Responsible for:
-- Detecting sensitive information
-- Detecting PII
-- Detecting passwords
-- Detecting faces
-- Redacting screenshots
-- Sanitizing DOM
-- Privacy verification
-- Local AI inference
-
-### Member 3 - Server + AI
-
-Folders:
-```text
-server/
-agent/
-```
-
-Responsible for:
-- FastAPI backend
-- API endpoints
-- VLM/LLM
-- AI reasoning
-- Action planning
-- Returning action JSON
-
----
-
-# 3. MOST IMPORTANT PRIVACY RULE
-
-## RAW PRIVATE DATA MUST NEVER BE SENT TO THE SERVER.
-
-Correct flow:
-```text
-Raw Screenshot + DOM
-        |
-        v
-Local Privacy Detection
-        |
-        v
-Redaction
-        |
-        v
-Privacy Verification
-        |
-        v
-Sanitized Screenshot + DOM
-        |
-        v
-Server
-```
-
----
-
-# 4. Sensitive Information
-
-The Privacy module should detect:
-- Passwords
-- Email addresses
-- Phone numbers
-- Government IDs
-- Credit/debit card numbers
-- Faces
-- Personal names
-- Sensitive form fields
-
-Example:
-```text
-Before:
-
-Name: John Smith
-Email: john@example.com
-Password: MyPassword123
-
-After:
-
-Name: [PERSON]
-Email: [EMAIL]
-Password: [REDACTED]
-```
-
----
-
-# 5. Extension -> Privacy
-
-The Extension sends:
 ```json
 {
   "request_id": "req-001",
-  "timestamp": "2026-09-07T10:30:00Z",
-  "url": "https://example.com",
-  "screenshot": "<BASE64_IMAGE>",
-  "dom": "<HTML_CONTENT>",
-  "user_instruction": "Find the submit button"
+  "dom": {
+    "page": {
+      "title": "Example page",
+      "url": "https://example.test/account"
+    },
+    "elements": []
+  }
 }
 ```
 
 Required fields:
-```text
-request_id
-timestamp
-url
-screenshot
-dom
-user_instruction
-```
 
----
+- `request_id`: non-empty client-generated string.
+- `dom`: sanitized structured DOM metadata. Raw HTML is not accepted.
 
-# 6. Privacy -> Server
+Optional fields:
 
-Only sanitized information can be sent.
+- `screenshot`: sanitized screenshot data as a data URL or supported encoded image.
+- `user_instruction`: user-provided task description after local sanitization.
+- `timestamp`: ISO 8601 request timestamp.
 
-Endpoint:
-```text
-POST /api/v1/analyze
-```
+The DOM may contain useful element metadata such as local element IDs, type, role,
+text labels, visibility, and bounding rectangles. It must not contain control values,
+passwords, tokens, cookies, `localStorage`, or `sessionStorage` contents.
 
-Example:
-```json
-{
-  "request_id": "req-001",
-  "user_instruction": "Find the submit button",
-  "sanitized_screenshot": "<BASE64_SANITIZED_IMAGE>",
-  "sanitized_dom": "<SANITIZED_HTML>",
-  "visual_elements": [
-    {
-      "type": "button",
-      "label": "Submit",
-      "id": "submit-btn"
-    }
-  ]
-}
-```
+## Success Response
 
----
-
-# 7. Server -> Extension
-
-The server returns an action.
-
-Example:
 ```json
 {
   "request_id": "req-001",
   "status": "success",
-  "action": {
-    "type": "click",
-    "target": {
-      "id": "submit-btn"
-    }
-  },
-  "confidence": 0.96,
-  "reason": "The Submit button matches the user's instruction."
+  "action": "click",
+  "target": "element_1",
+  "confidence": 0.95,
+  "reason": "The primary action matches the request."
 }
 ```
 
----
+Required response fields:
 
-# 8. Supported Actions
+- `request_id`: matches the request.
+- `status`: `success`.
+- `action`: one supported action name.
+- `target`: local element identifier, except where noted below.
 
-Initially we support:
-```text
-click
-scroll
-type
-navigate
-```
+Optional response fields:
 
-Example click:
+- `text`: required for `type`.
+- `direction` and `amount`: required for `scroll`.
+- `url`: required for `navigate` and must be an `http` or `https` URL.
+- `value`: required for `select`; it identifies the option to select and must not
+  contain a secret.
+- `confidence`: number from `0.0` to `1.0`.
+- `reason`: concise explanation without private data.
+
+## Supported Actions
+
+### Click
+
 ```json
 {
-  "type": "click",
-  "target": {
-    "id": "submit-btn"
-  }
+  "action": "click",
+  "target": "element_1"
 }
 ```
 
-Example scroll:
+### Type
+
 ```json
 {
-  "type": "scroll",
-  "target": {
-    "direction": "down",
-    "amount": 600
-  }
+  "action": "type",
+  "target": "element_2",
+  "text": "example"
 }
 ```
 
----
+The server must never request typing a password, authentication token, or other
+sensitive value.
 
-# 9. Confidence
+### Scroll
 
-The AI must return confidence between:
-```text
-0.0 and 1.0
+```json
+{
+  "action": "scroll",
+  "direction": "down",
+  "amount": 600
+}
 ```
 
-Initial rule:
-```text
-confidence >= 0.80
-        |
-        v
-Execute action
+`direction` must be `up` or `down`. `amount` must be a positive finite number.
+The `target` may be omitted for page-level scrolling.
 
-confidence < 0.80
-        |
-        v
-Ask user / request clarification
+### Navigate
+
+```json
+{
+  "action": "navigate",
+  "target": "element_4",
+  "url": "https://example.test/next"
+}
 ```
 
----
+`url` must use `http` or `https`. The client must reject other protocols.
 
-# 10. Error Response
+### Select
 
-If something fails:
+```json
+{
+  "action": "select",
+  "target": "element_5",
+  "value": "option-a"
+}
+```
+
+`value` identifies a non-sensitive option. It must not be used to transmit form
+secrets.
+
+## Validation Rules
+
+The client must reject responses when:
+
+- JSON is invalid or the response is not an object.
+- `status` is not `success` or `error`.
+- `action` is not `click`, `type`, `scroll`, `navigate`, or `select`.
+- `target` is missing or is not a local element identifier when required.
+- `type` has no non-empty string `text`.
+- `scroll` has an invalid direction or non-positive amount.
+- `navigate` has an invalid or non-HTTP(S) URL.
+- `select` has no non-empty option `value`.
+- `confidence` is outside the range `0.0` to `1.0`.
+- Any response field contains a password, token, cookie, or other secret.
+
+The client should not execute actions below its configured confidence threshold. A
+common initial threshold is `0.80`.
+
+## Error Response
+
+Errors use HTTP 4xx for invalid client requests and HTTP 5xx for server failures:
+
 ```json
 {
   "request_id": "req-001",
   "status": "error",
   "error": {
     "code": "INVALID_CONTEXT",
-    "message": "Sanitized context could not be processed."
+    "message": "The sanitized DOM context is invalid."
   }
 }
 ```
 
-Possible error codes:
-```text
-INVALID_REQUEST
-INVALID_CONTEXT
-PRIVACY_CHECK_FAILED
-MODEL_ERROR
-ACTION_NOT_FOUND
-LOW_CONFIDENCE
-SERVER_ERROR
-```
+Required error fields:
 
----
+- `status`: `error`.
+- `error.code`: stable machine-readable code.
+- `error.message`: safe human-readable message without secrets.
 
-# 11. Integration Order
+Recommended error codes:
 
-Build and test in this order:
+- `INVALID_REQUEST`
+- `INVALID_CONTEXT`
+- `PRIVACY_CHECK_FAILED`
+- `ACTION_NOT_FOUND`
+- `LOW_CONFIDENCE`
+- `MODEL_ERROR`
+- `SERVER_ERROR`
 
-### Step 1
-```text
-Extension -> Privacy
-```
-
-### Step 2
-```text
-Privacy -> Server
-```
-
-### Step 3
-```text
-Server -> Extension
-```
+Error messages must never echo request bodies, passwords, cookies, storage values,
+authentication tokens, or other sensitive information.
 
 ### Step 4
 ```text

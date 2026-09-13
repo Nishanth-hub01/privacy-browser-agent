@@ -1,7 +1,11 @@
+importScripts('utils/privacy.js', 'utils/local-ai.js', 'utils/api.js');
+
 const MESSAGE_TYPES = Object.freeze({
   ANALYZE_PAGE: 'ANALYZE_PAGE',
   CAPTURE_SCREENSHOT: 'CAPTURE_SCREENSHOT',
-  GET_PAGE_CONTEXT: 'GET_PAGE_CONTEXT'
+  GET_PAGE_CONTEXT: 'GET_PAGE_CONTEXT',
+  EXECUTE_ACTION: 'EXECUTE_ACTION',
+  WORKFLOW_STATUS: 'WORKFLOW_STATUS'
 });
 
 const CONTENT_SCRIPT_TIMEOUT_MS = 5000;
@@ -15,8 +19,14 @@ function isValidMessage(message) {
   return Boolean(
     message &&
     typeof message === 'object' &&
-    Object.values(MESSAGE_TYPES).includes(message.type)
+    [MESSAGE_TYPES.ANALYZE_PAGE, MESSAGE_TYPES.CAPTURE_SCREENSHOT, MESSAGE_TYPES.GET_PAGE_CONTEXT, MESSAGE_TYPES.EXECUTE_ACTION].includes(message.type)
   );
+}
+
+function emitStatus(message) {
+  chrome.runtime.sendMessage({ type: MESSAGE_TYPES.WORKFLOW_STATUS, message }, () => {
+    void chrome.runtime.lastError;
+  });
 }
 
 function isRestrictedPage(url) {
@@ -76,6 +86,7 @@ async function handleRequest(message) {
   const tab = await getActiveTab();
 
   if (message.type === MESSAGE_TYPES.CAPTURE_SCREENSHOT) {
+    emitStatus('Capturing visible page...');
     try {
       const image = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' });
       if (!image) throw new Error('The browser returned an empty screenshot.');
@@ -85,11 +96,89 @@ async function handleRequest(message) {
     }
   }
 
-  const contentMessage = {
-    type: message.type === MESSAGE_TYPES.ANALYZE_PAGE ? MESSAGE_TYPES.ANALYZE_PAGE : MESSAGE_TYPES.GET_PAGE_CONTEXT
+  if (message.type === MESSAGE_TYPES.GET_PAGE_CONTEXT) {
+    emitStatus('Reading page structure...');
+    const response = await sendToContentScript(tab.id, { type: MESSAGE_TYPES.GET_PAGE_CONTEXT });
+    return { ok: true, type: message.type, ...response };
+  }
+
+  if (message.type === MESSAGE_TYPES.EXECUTE_ACTION) {
+    emitStatus('Executing validated action...');
+    const response = await sendToContentScript(tab.id, {
+      type: MESSAGE_TYPES.EXECUTE_ACTION,
+      action: message.action
+    });
+    return { ok: true, type: message.type, ...response };
+  }
+
+  emitStatus('Reading page structure...');
+  const pageResponse = await sendToContentScript(tab.id, { type: MESSAGE_TYPES.GET_PAGE_CONTEXT });
+  emitStatus('Capturing visible page...');
+  const screenshot = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' });
+  if (!screenshot) throw Object.assign(new Error('The browser returned an empty screenshot.'), { code: 'SCREENSHOT_FAILED' });
+
+  const dom = pageResponse.data || {};
+  const sanitizedDom = privacySanitizer.sanitize(dom);
+  emitStatus('Running local perception...');
+  const perception = localAi.perceive({ screenshot, dom: sanitizedDom });
+  emitStatus('Sending sanitized context...');
+  const backendResponse = await browserAgentApi.sendContextToBackend({
+    request_id: `req-${Date.now()}`,
+    screenshot,
+    sanitized_screenshot: '[REDACTED_SCREENSHOT]',
+    dom: sanitizedDom,
+    user_instruction: typeof message.instruction === 'string' ? message.instruction : ''
+  });
+  const action = normalizeServerAction(backendResponse);
+  validateServerAction(backendResponse, action);
+  emitStatus('Validating action...');
+  const execution = await sendToContentScript(tab.id, {
+    type: MESSAGE_TYPES.EXECUTE_ACTION,
+    action
+  });
+  if (!execution.data || execution.data.success !== true) {
+    throw Object.assign(new Error(execution.data?.error?.message || 'Action execution was rejected.'), { code: 'EXECUTION_FAILED' });
+  }
+  return {
+    ok: true,
+    type: message.type,
+    data: sanitizedDom,
+    perception,
+    action,
+    execution
   };
-  const response = await sendToContentScript(tab.id, contentMessage);
-  return { ok: true, type: message.type, ...response };
+}
+
+function normalizeServerAction(response) {
+  const serverAction = response && response.action;
+  if (!serverAction || typeof serverAction !== 'object') return null;
+
+  const type = serverAction.type || serverAction.action;
+  const target = serverAction.target;
+  const normalized = { action: type };
+
+  if (typeof target === 'string') normalized.target = target;
+  if (target && typeof target === 'object' && typeof target.id === 'string') normalized.target = target.id;
+  if (type === 'type') normalized.text = serverAction.text;
+  if (type === 'scroll') {
+    normalized.direction = target && target.direction;
+    normalized.amount = target && target.amount;
+  }
+  if (type === 'navigate') normalized.url = target && target.url;
+  if (type === 'select') normalized.value = serverAction.value;
+  return normalized;
+}
+
+function validateServerAction(response, action) {
+  if (!response || response.status !== 'success' || !action) {
+    throw Object.assign(new Error('Backend returned no executable action.'), { code: 'INVALID_ACTION_RESPONSE' });
+  }
+  if (typeof response.confidence !== 'number' || response.confidence < 0.8) {
+    throw Object.assign(new Error('Action confidence is below the execution threshold.'), { code: 'LOW_CONFIDENCE' });
+  }
+  if (!['click', 'type', 'scroll', 'navigate', 'select'].includes(action.action)) {
+    throw Object.assign(new Error('Backend returned an unsupported action.'), { code: 'UNSUPPORTED_ACTION' });
+  }
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {

@@ -25,6 +25,7 @@
       ],
       "js": [
         "utils/dom-analyzer.js",
+        "utils/action-executor.js",
         "content/content-script.js"
       ],
       "run_at": "document_idle",
