@@ -21,4 +21,5 @@ except ModuleNotFoundError:
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    app_target = "server.main:app" if Path.cwd() == ROOT_DIR else "main:app"
+    uvicorn.run(app_target, host="0.0.0.0", port=8000, reload=True)

@@ -83,8 +83,19 @@ except (ModuleNotFoundError, ImportError):
 
 logger = logging.getLogger("server.routes")
 
-# Initialize agent instance with MockPlanner (replaced by LLMPlanner in a later phase)
-agent = BrowserAgent() if BrowserAgent else None
+def _get_default_agent():
+    """Initializes the BrowserAgent with LLMPlanner, falling back to MockPlanner when unconfigured."""
+    if not BrowserAgent:
+        return None
+    try:
+        from agent.config import AgentConfig
+        from agent.llm_planner import LLMPlanner
+        cfg = AgentConfig.from_env()
+        return BrowserAgent(planner=LLMPlanner(config=cfg))
+    except Exception:
+        return BrowserAgent()
+
+agent = _get_default_agent()
 
 router = APIRouter(prefix="/api/v1", tags=["analyze"])
 
@@ -97,10 +108,26 @@ async def privacy_status():
     connected to the server. When privacy_module_available is False, the Extension
     must manually provide already-sanitized fields in its POST /api/v1/analyze body.
     """
+    planner_name = "unknown"
+    provider_name = "unknown"
+    model_name = "unknown"
+    is_local_vlm = False
+    if agent and hasattr(agent, "planner"):
+        planner = agent.planner
+        planner_name = type(planner).__name__
+        if hasattr(planner, "config"):
+            provider_name = getattr(planner.config, "provider", "unknown")
+            model_name = getattr(planner.config, "model", "unknown")
+            is_local_vlm = getattr(planner.config, "is_ollama", False)
+
     return {
         "privacy_module_available": INTEGRATION_STATUS["privacy_module_available"],
         "server_pii_guard_active": INTEGRATION_STATUS["server_pii_guard_active"],
         "sanitized_field_enforcement": INTEGRATION_STATUS["sanitized_field_enforcement"],
+        "agent_planner": planner_name,
+        "llm_provider": provider_name,
+        "vlm_model": model_name,
+        "is_local_vlm": is_local_vlm,
         "accepted_fields": [
             "sanitized_screenshot",
             "sanitized_dom",
@@ -135,6 +162,7 @@ def _error(request_id: str, code: ErrorCode, message: str, http_status: int) -> 
 @router.post(
     "/analyze",
     response_model=ServerResponse,
+    response_model_exclude_none=True,
     responses={
         200: {"model": ServerResponse, "description": "Successful action or low-confidence notice"},
         400: {"model": ErrorResponse, "description": "Invalid request or privacy violation"},

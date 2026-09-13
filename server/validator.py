@@ -46,7 +46,7 @@ def check_privacy_violations(request: AnalyzeRequest) -> Optional[str]:
     """Server-side last-resort PII guard (per API_CONTRACT.md §3).
 
     Delegates to server.privacy_interface.check_sanitized_fields which scans
-    sanitized_dom and user_instruction for common unredacted patterns:
+    sanitized_dom, user_instruction, and visual_elements for common unredacted patterns:
       - Passwords   (e.g. "password: MySecret123")
       - Email addresses (e.g. "user@example.com")
       - Phone numbers (e.g. "+1 800 555 0100")
@@ -63,6 +63,7 @@ def check_privacy_violations(request: AnalyzeRequest) -> Optional[str]:
         sanitized_screenshot=request.sanitized_screenshot,
         sanitized_dom=request.sanitized_dom,
         user_instruction=request.user_instruction,
+        visual_elements=[el.model_dump() for el in request.visual_elements] if request.visual_elements else None,
     )
 
 
@@ -97,10 +98,10 @@ def validate_confidence(confidence: Any) -> float:
 
     Confidence must be a numeric value in [0.0, 1.0].
     Raises:
-        TypeError: if the value is not numeric.
+        TypeError: if the value is not numeric or is a boolean.
         ValueError: if the value is outside [0.0, 1.0].
     """
-    if not isinstance(confidence, (int, float)):
+    if not isinstance(confidence, (int, float)) or isinstance(confidence, bool):
         raise TypeError(
             f"confidence must be a numeric value, got {type(confidence).__name__!r}."
         )
@@ -147,6 +148,9 @@ def validate_browser_action(action_data: Any) -> BrowserAction:
         return validated
 
     elif action_type == "scroll":
+        target = action_data.get("target")
+        if isinstance(target, dict) and isinstance(target.get("amount"), bool):
+            raise ValueError("Scroll amount must be a positive integer, not a boolean.")
         validated = ScrollAction.model_validate(action_data)
         if validated.target.amount <= 0:
             raise ValueError("Scroll amount must be a positive integer.")
@@ -154,7 +158,7 @@ def validate_browser_action(action_data: Any) -> BrowserAction:
 
     elif action_type == "type":
         validated = TypeAction.model_validate(action_data)
-        if not validated.text or not isinstance(validated.text, str):
+        if not validated.text or not isinstance(validated.text, str) or not validated.text.strip():
             raise ValueError("Type action requires a non-empty 'text' string.")
         t = validated.target
         if not (t.id or t.selector or (t.x is not None and t.y is not None)):

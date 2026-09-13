@@ -106,11 +106,33 @@ class LLMPlanner(BasePlanner):
 
         clean_text = raw_response.strip()
 
-        # Strip markdown code blocks if the model wrapped the JSON (e.g., ```json ... ```)
+        # 1. Extract markdown code block if present anywhere in the output
+        code_block_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", clean_text, re.DOTALL)
+        if code_block_match:
+            candidate = code_block_match.group(1).strip()
+            try:
+                json.loads(candidate)
+                clean_text = candidate
+            except json.JSONDecodeError:
+                pass
+
+        # 2. Strip standard markdown code blocks at beginning/end
         if clean_text.startswith("```"):
             clean_text = re.sub(r"^```(?:json)?\s*", "", clean_text)
             clean_text = re.sub(r"\s*```$", "", clean_text)
             clean_text = clean_text.strip()
+
+        # 3. If still surrounded by conversational commentary, locate the outer JSON object
+        if not clean_text.startswith("{"):
+            first_brace = clean_text.find("{")
+            last_brace = clean_text.rfind("}")
+            if first_brace != -1 and last_brace != -1 and last_brace > first_brace:
+                candidate = clean_text[first_brace:last_brace + 1].strip()
+                try:
+                    json.loads(candidate)
+                    clean_text = candidate
+                except json.JSONDecodeError:
+                    pass
 
         try:
             data = json.loads(clean_text)
@@ -218,9 +240,9 @@ class LLMPlanner(BasePlanner):
                 )
 
             text = action.get("text")
-            if text is None or not isinstance(text, str):
+            if text is None or not isinstance(text, str) or not text.strip():
                 raise InvalidActionTargetError(
-                    "Type action requires a 'text' string field."
+                    "Type action requires a non-empty 'text' string field."
                 )
 
         elif action_type == "navigate":

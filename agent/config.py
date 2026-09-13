@@ -29,27 +29,58 @@ class AgentConfig:
     temperature: float = 0.1
     fallback_to_mock: bool = False
 
+    @property
+    def is_ollama(self) -> bool:
+        """Returns True if configured for Ollama or local endpoint."""
+        return self.provider.lower() in ("ollama", "local") or ("localhost:11434" in (self.base_url or ""))
+
     @classmethod
     def from_env(cls) -> "AgentConfig":
         """Builds configuration from environment variables.
 
         Supported environment variables:
-            LLM_PROVIDER / AGENT_PROVIDER: Name of the provider (default: 'openai')
-            OPENAI_API_KEY / AGENT_API_KEY: Provider API key
-            OPENAI_MODEL / AGENT_MODEL: Model name (default: 'gpt-4o')
-            OPENAI_BASE_URL / AGENT_BASE_URL: Custom endpoint URL
+            LLM_PROVIDER / AGENT_PROVIDER: Name of the provider ('openai', 'ollama', etc.)
+            OLLAMA_BASE_URL / OPENAI_BASE_URL / AGENT_BASE_URL: Custom endpoint URL
+            OLLAMA_MODEL / OPENAI_MODEL / AGENT_MODEL: Model name (default: 'gpt-4o' or 'llava')
+            OPENAI_API_KEY / AGENT_API_KEY: Provider API key (auto-set to 'ollama' for Ollama)
             AGENT_TIMEOUT: Request timeout in seconds (default: 30.0)
             AGENT_TEMPERATURE: Generation temperature (default: 0.1)
-            AGENT_FALLBACK_TO_MOCK: 'true'/'false' (default: True if no API key present)
+            AGENT_FALLBACK_TO_MOCK: 'true'/'false' (default: False for Ollama, True if no API key for OpenAI)
         """
-        api_key = os.getenv("OPENAI_API_KEY") or os.getenv("AGENT_API_KEY")
+        provider = (
+            os.getenv("LLM_PROVIDER")
+            or os.getenv("AGENT_PROVIDER")
+            or ("ollama" if os.getenv("OLLAMA_MODEL") or os.getenv("OLLAMA_BASE_URL") else "openai")
+        ).lower()
 
-        # If API key is not present, default fallback_to_mock to True for safe local testing
+        # Endpoint resolution (default to http://localhost:11434/v1 for Ollama)
+        base_url = os.getenv("OLLAMA_BASE_URL") or os.getenv("OPENAI_BASE_URL") or os.getenv("AGENT_BASE_URL")
+        if not base_url and provider in ("ollama", "local"):
+            base_url = "http://localhost:11434/v1"
+
+        # Model resolution (default to 'llava' for Ollama, 'gpt-4o' for OpenAI)
+        default_model = "llava" if provider in ("ollama", "local") else "gpt-4o"
+        model = (
+            os.getenv("OLLAMA_MODEL")
+            or os.getenv("OPENAI_MODEL")
+            or os.getenv("AGENT_MODEL")
+            or default_model
+        )
+
+        api_key = os.getenv("OPENAI_API_KEY") or os.getenv("AGENT_API_KEY")
+        # Ollama local VLM doesn't require an external API key; provide dummy key for AsyncOpenAI client
+        if not api_key and provider in ("ollama", "local"):
+            api_key = "ollama"
+
+        # Fallback to mock: if Ollama or explicit API key, default fallback is False unless overridden
         fallback_env = os.getenv("AGENT_FALLBACK_TO_MOCK")
         if fallback_env is not None:
             fallback_to_mock = fallback_env.strip().lower() in ("true", "1", "yes")
         else:
-            fallback_to_mock = not bool(api_key)
+            if provider in ("ollama", "local"):
+                fallback_to_mock = False
+            else:
+                fallback_to_mock = not bool(api_key)
 
         timeout_str = os.getenv("AGENT_TIMEOUT", "30.0")
         try:
@@ -64,10 +95,10 @@ class AgentConfig:
             temperature = 0.1
 
         return cls(
-            provider=(os.getenv("LLM_PROVIDER") or os.getenv("AGENT_PROVIDER") or "openai").lower(),
+            provider=provider,
             api_key=api_key,
-            model=os.getenv("OPENAI_MODEL") or os.getenv("AGENT_MODEL") or "gpt-4o",
-            base_url=os.getenv("OPENAI_BASE_URL") or os.getenv("AGENT_BASE_URL"),
+            model=model,
+            base_url=base_url,
             timeout=timeout,
             temperature=temperature,
             fallback_to_mock=fallback_to_mock,
@@ -78,8 +109,11 @@ class AgentConfig:
 
         Example:
             sk-proj-abc123456789xyz -> sk-...9xyz
+            ollama -> <LOCAL OLLAMA>
             None -> <NOT SET>
         """
+        if self.is_ollama and (not self.api_key or self.api_key == "ollama"):
+            return "<LOCAL OLLAMA>"
         if not self.api_key:
             return "<NOT SET>"
         clean = self.api_key.strip()
@@ -89,5 +123,7 @@ class AgentConfig:
 
     @property
     def has_api_key(self) -> bool:
-        """Returns True if a non-empty API key is configured."""
+        """Returns True if a non-empty API key is configured or provider is local Ollama."""
+        if self.is_ollama:
+            return True
         return bool(self.api_key and self.api_key.strip())
