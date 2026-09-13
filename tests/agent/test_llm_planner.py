@@ -48,6 +48,7 @@ class TestAgentConfig(unittest.TestCase):
             "OPENAI_MODEL": "gpt-4o-mini",
             "OPENAI_BASE_URL": "http://localhost:8080/v1",
             "AGENT_TIMEOUT": "45.0",
+            "AGENT_TIMEOUT_SECONDS": "120",
             "AGENT_TEMPERATURE": "0.2",
             "AGENT_FALLBACK_TO_MOCK": "false",
         }
@@ -56,9 +57,28 @@ class TestAgentConfig(unittest.TestCase):
             self.assertEqual(config.api_key, "sk-test-key-9999")
             self.assertEqual(config.model, "gpt-4o-mini")
             self.assertEqual(config.base_url, "http://localhost:8080/v1")
-            self.assertEqual(config.timeout, 45.0)
+            self.assertEqual(config.timeout, 120.0)
             self.assertEqual(config.temperature, 0.2)
             self.assertFalse(config.fallback_to_mock)
+
+    def test_browser_agent_multi_step_state_machine(self):
+        class SequencePlanner:
+            def __init__(self):
+                self.calls = 0
+
+            async def plan(self, context):
+                self.calls += 1
+                if self.calls == 1:
+                    return ActionResult(action={"type": "click", "target": {"id": "search-btn"}}, confidence=0.60, reason="Open the search UI")
+                if self.calls == 2:
+                    return ActionResult(action={"type": "type", "target": {"id": "search-box"}, "text": "cm vijay"}, confidence=0.92, reason="Type the search query for the result page")
+                return ActionResult(action={"type": "click", "target": {"id": "result-link"}}, confidence=0.98, reason="Open the final result page")
+
+        agent = BrowserAgent(planner=SequencePlanner())
+        task = agent.run_task("Look up the result", max_steps=3)
+        self.assertEqual(task.status, "SUCCESS")
+        self.assertGreaterEqual(task.steps, 2)
+        self.assertIn("result", task.summary.lower())
 
 
 class TestPromptAndMultimodalPayload(unittest.TestCase):

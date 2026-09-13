@@ -34,43 +34,81 @@ class AgentConfig:
         """Returns True if configured for Ollama or local endpoint."""
         return self.provider.lower() in ("ollama", "local") or ("localhost:11434" in (self.base_url or ""))
 
+    @property
+    def is_gemini(self) -> bool:
+        """Returns True if configured for Gemini / Google endpoint."""
+        return self.provider.lower() in ("gemini", "google") or ("generativelanguage.googleapis.com" in (self.base_url or ""))
+
     @classmethod
     def from_env(cls) -> "AgentConfig":
         """Builds configuration from environment variables.
 
         Supported environment variables:
-            LLM_PROVIDER / AGENT_PROVIDER: Name of the provider ('openai', 'ollama', etc.)
+            LLM_PROVIDER / AGENT_PROVIDER: Name of the provider ('gemini', 'openai', 'ollama', etc.)
+            GEMINI_API_KEY / GOOGLE_API_KEY: Google Gemini API key
+            GEMINI_MODEL / GOOGLE_MODEL: Model name (default: 'gemini-2.0-flash')
+            GEMINI_BASE_URL: Custom endpoint URL (default: 'https://generativelanguage.googleapis.com/v1beta/openai/')
             OLLAMA_BASE_URL / OPENAI_BASE_URL / AGENT_BASE_URL: Custom endpoint URL
-            OLLAMA_MODEL / OPENAI_MODEL / AGENT_MODEL: Model name (default: 'gpt-4o' or 'llava')
-            OPENAI_API_KEY / AGENT_API_KEY: Provider API key (auto-set to 'ollama' for Ollama)
-            AGENT_TIMEOUT: Request timeout in seconds (default: 30.0)
+            OLLAMA_MODEL / OPENAI_MODEL / AGENT_MODEL: Model name
+            OPENAI_API_KEY / AGENT_API_KEY: OpenAI Provider API key
+            AGENT_TIMEOUT: Request timeout in seconds (default: 30.0 for Gemini/OpenAI, 120.0 for Ollama)
             AGENT_TEMPERATURE: Generation temperature (default: 0.1)
-            AGENT_FALLBACK_TO_MOCK: 'true'/'false' (default: False for Ollama, True if no API key for OpenAI)
+            AGENT_FALLBACK_TO_MOCK: 'true'/'false' (default: False if key/ollama present, True otherwise)
         """
-        provider = (
-            os.getenv("LLM_PROVIDER")
-            or os.getenv("AGENT_PROVIDER")
-            or ("ollama" if os.getenv("OLLAMA_MODEL") or os.getenv("OLLAMA_BASE_URL") else "openai")
-        ).lower()
+        gemini_api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+        openai_api_key = os.getenv("OPENAI_API_KEY") or os.getenv("AGENT_API_KEY")
+        openai_model = os.getenv("OPENAI_MODEL")
+        ollama_model = os.getenv("OLLAMA_MODEL")
+        gemini_model = os.getenv("GEMINI_MODEL") or os.getenv("GOOGLE_MODEL")
+        provider_env = os.getenv("LLM_PROVIDER") or os.getenv("AGENT_PROVIDER")
+        timeout_seconds_raw = os.getenv("AGENT_TIMEOUT_SECONDS") or os.getenv("AGENT_TIMEOUT") or "120"
 
-        # Endpoint resolution (default to http://localhost:11434/v1 for Ollama)
-        base_url = os.getenv("OLLAMA_BASE_URL") or os.getenv("OPENAI_BASE_URL") or os.getenv("AGENT_BASE_URL")
-        if not base_url and provider in ("ollama", "local"):
-            base_url = "http://localhost:11434/v1"
+        if provider_env:
+            provider = provider_env.strip().lower()
+            # Prefer explicit Gemini configuration over stale shell-level Ollama values.
+            if provider in ("ollama", "local") and gemini_api_key:
+                provider = "gemini"
+            # If provider was set to ollama in shell, but active context explicitly provides
+            # an OpenAI sk- key and OPENAI_MODEL, prioritize openai
+            if provider in ("ollama", "local") and openai_api_key and openai_api_key.startswith("sk-") and openai_model:
+                provider = "openai"
+        elif gemini_api_key:
+            provider = "gemini"
+        elif ollama_model or os.getenv("OLLAMA_BASE_URL"):
+            provider = "ollama"
+        else:
+            provider = "openai"
 
-        # Model resolution (default to 'llava' for Ollama, 'gpt-4o' for OpenAI)
-        default_model = "llava" if provider in ("ollama", "local") else "gpt-4o"
-        model = (
-            os.getenv("OLLAMA_MODEL")
-            or os.getenv("OPENAI_MODEL")
-            or os.getenv("AGENT_MODEL")
-            or default_model
-        )
-
-        api_key = os.getenv("OPENAI_API_KEY") or os.getenv("AGENT_API_KEY")
-        # Ollama local VLM doesn't require an external API key; provide dummy key for AsyncOpenAI client
-        if not api_key and provider in ("ollama", "local"):
-            api_key = "ollama"
+        # Endpoint, model, and api_key resolution based on provider
+        if provider in ("gemini", "google"):
+            api_key = gemini_api_key or openai_api_key
+            base_url = (
+                os.getenv("GEMINI_BASE_URL")
+                or os.getenv("GOOGLE_BASE_URL")
+                or "https://generativelanguage.googleapis.com/v1beta/openai/"
+            )
+            model = gemini_model or os.getenv("AGENT_MODEL") or "gemini-2.0-flash"
+            default_timeout = 30.0
+        elif provider in ("ollama", "local"):
+            api_key = openai_api_key or "ollama"
+            base_url = (
+                os.getenv("OLLAMA_BASE_URL")
+                or os.getenv("OPENAI_BASE_URL")
+                or os.getenv("AGENT_BASE_URL")
+                or "http://localhost:11434/v1"
+            )
+            model = (
+                ollama_model
+                or openai_model
+                or os.getenv("AGENT_MODEL")
+                or "llava"
+            )
+            default_timeout = 120.0
+        else:
+            api_key = openai_api_key
+            base_url = os.getenv("OPENAI_BASE_URL") or os.getenv("AGENT_BASE_URL")
+            model = openai_model or os.getenv("AGENT_MODEL") or "gpt-4o"
+            default_timeout = 30.0
 
         # Fallback to mock: if Ollama or explicit API key, default fallback is False unless overridden
         fallback_env = os.getenv("AGENT_FALLBACK_TO_MOCK")
@@ -82,11 +120,12 @@ class AgentConfig:
             else:
                 fallback_to_mock = not bool(api_key)
 
-        timeout_str = os.getenv("AGENT_TIMEOUT", "30.0")
         try:
-            timeout = float(timeout_str)
+            timeout = float(timeout_seconds_raw)
         except ValueError:
-            timeout = 30.0
+            timeout = 120.0
+        if timeout <= 0:
+            timeout = 120.0
 
         temp_str = os.getenv("AGENT_TEMPERATURE", "0.1")
         try:

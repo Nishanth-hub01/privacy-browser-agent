@@ -21,6 +21,7 @@ if str(ROOT_DIR) not in sys.path:
 from fastapi.testclient import TestClient
 from server.api import app
 from agent.actions import ActionResult
+from agent.provider import ProviderRateLimitError
 
 
 class TestErrorHandling(unittest.TestCase):
@@ -184,6 +185,17 @@ class TestErrorHandling(unittest.TestCase):
             self.assertEqual(data["status"], "error")
             self.assertEqual(data["error"]["code"], "MODEL_ERROR")
             self.assertIn("Neural model inference crashed", data["error"]["message"])
+
+    def test_model_error_gemini_rate_limit(self):
+        with patch("server.routes.agent") as mock_agent:
+            mock_agent.act = AsyncMock(side_effect=ProviderRateLimitError("Gemini quota exhausted", retry_after=12.0))
+            res = self.client.post("/api/v1/analyze", json=self.valid_payload)
+            self.assertEqual(res.status_code, 429)
+            data = res.json()
+            self.assertEqual(data["status"], "error")
+            self.assertEqual(data["error"]["code"], "MODEL_ERROR")
+            self.assertIn("quota exhausted", data["error"]["message"].lower())
+            self.assertEqual(res.headers.get("Retry-After"), "12")
 
     def test_model_error_invalid_confidence_type(self):
         # Fake an ActionResult with corrupted non-numeric confidence
