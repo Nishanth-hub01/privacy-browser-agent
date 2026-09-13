@@ -83,8 +83,19 @@ except (ModuleNotFoundError, ImportError):
 
 logger = logging.getLogger("server.routes")
 
-# Initialize agent instance with MockPlanner (replaced by LLMPlanner in a later phase)
-agent = BrowserAgent() if BrowserAgent else None
+def _get_default_agent():
+    """Initializes the BrowserAgent with LLMPlanner, falling back to MockPlanner when unconfigured."""
+    if not BrowserAgent:
+        return None
+    try:
+        from agent.config import AgentConfig
+        from agent.llm_planner import LLMPlanner
+        cfg = AgentConfig.from_env()
+        return BrowserAgent(planner=LLMPlanner(config=cfg))
+    except Exception:
+        return BrowserAgent()
+
+agent = _get_default_agent()
 
 router = APIRouter(prefix="/api/v1", tags=["analyze"])
 
@@ -135,6 +146,7 @@ def _error(request_id: str, code: ErrorCode, message: str, http_status: int) -> 
 @router.post(
     "/analyze",
     response_model=ServerResponse,
+    response_model_exclude_none=True,
     responses={
         200: {"model": ServerResponse, "description": "Successful action or low-confidence notice"},
         400: {"model": ErrorResponse, "description": "Invalid request or privacy violation"},

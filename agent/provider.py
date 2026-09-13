@@ -82,12 +82,24 @@ class OpenAIProvider(BaseLLMProvider):
 
         try:
             # We request json_object response_format where supported
-            completion = await client.chat.completions.create(
-                model=self.config.model,
-                messages=messages,
-                temperature=self.config.temperature,
-                response_format={"type": "json_object"},
-            )
+            try:
+                completion = await client.chat.completions.create(
+                    model=self.config.model,
+                    messages=messages,
+                    temperature=self.config.temperature,
+                    response_format={"type": "json_object"},
+                )
+            except Exception as initial_err:
+                err_str = str(initial_err).lower()
+                if "response_format" in err_str or "json_object" in err_str:
+                    logger.warning("Model endpoint rejected json_object response_format; retrying without it.")
+                    completion = await client.chat.completions.create(
+                        model=self.config.model,
+                        messages=messages,
+                        temperature=self.config.temperature,
+                    )
+                else:
+                    raise initial_err
 
             choice = completion.choices[0]
             content = choice.message.content

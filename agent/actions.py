@@ -23,7 +23,7 @@ class ActionResult:
 
     def __post_init__(self) -> None:
         """Validate that confidence is within the legal range [0.0, 1.0]."""
-        if not isinstance(self.confidence, (int, float)):
+        if not isinstance(self.confidence, (int, float)) or isinstance(self.confidence, bool):
             raise TypeError(
                 f"confidence must be a float, got {type(self.confidence).__name__!r}."
             )

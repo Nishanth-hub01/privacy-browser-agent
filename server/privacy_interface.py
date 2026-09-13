@@ -124,6 +124,7 @@ def check_sanitized_fields(
     sanitized_screenshot: str,
     sanitized_dom: str,
     user_instruction: str,
+    visual_elements: Optional[List[Any]] = None,
 ) -> Optional[str]:
     """Server-side last-resort PII guard (per API_CONTRACT.md §3).
 
@@ -138,6 +139,7 @@ def check_sanitized_fields(
         sanitized_screenshot: base64-encoded screenshot string.
         sanitized_dom:        sanitized HTML/DOM text.
         user_instruction:     user's natural-language instruction.
+        visual_elements:      optional list of visual element dictionaries to scan.
 
     Returns:
         str describing the violation, or None if all fields appear clean.
@@ -145,9 +147,14 @@ def check_sanitized_fields(
     fields_to_check = {
         "sanitized_dom": sanitized_dom,
         "user_instruction": user_instruction,
-        # Note: sanitized_screenshot is base64 — PII patterns won't match meaningfully.
-        # It is checked only for presence/length in check_context_validity().
     }
+
+    if visual_elements and isinstance(visual_elements, list):
+        for idx, el in enumerate(visual_elements):
+            if isinstance(el, dict):
+                for k, v in el.items():
+                    if isinstance(v, str):
+                        fields_to_check[f"visual_elements[{idx}].{k}"] = v
 
     for field_name, text in fields_to_check.items():
         if not text:
@@ -194,6 +201,7 @@ def verify_sanitized_context(ctx: SanitizedContext) -> Optional[str]:
         sanitized_screenshot=ctx.sanitized_screenshot,
         sanitized_dom=ctx.sanitized_dom,
         user_instruction=ctx.user_instruction,
+        visual_elements=ctx.visual_elements,
     )
 
 

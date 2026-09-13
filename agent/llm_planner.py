@@ -218,9 +218,9 @@ class LLMPlanner(BasePlanner):
                 )
 
             text = action.get("text")
-            if text is None or not isinstance(text, str):
+            if text is None or not isinstance(text, str) or not text.strip():
                 raise InvalidActionTargetError(
-                    "Type action requires a 'text' string field."
+                    "Type action requires a non-empty 'text' string field."
                 )
 
         elif action_type == "navigate":
